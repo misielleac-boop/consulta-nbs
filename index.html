@@ -101,13 +101,29 @@ mark{background:var(--hl);color:inherit;border-radius:3px;padding:0 1px}
 .foot ul{margin:8px 0 0;padding-left:18px}
 .theme{position:absolute;right:14px;top:calc(12px + env(safe-area-inset-top,0px));border:1px solid #ffffff44;background:transparent;color:#fff;border-radius:999px;padding:5px 12px;font-size:13px;cursor:pointer}
 .band{position:relative}
+.ai{margin:10px 0 6px}
+.aibtn{display:flex;align-items:center;gap:12px;width:100%;border:2px solid var(--violet);background:var(--lav);color:var(--lav-ink);border-radius:14px;padding:12px 16px;font-size:16px;cursor:pointer;text-align:left;box-shadow:0 6px 16px -8px var(--violet)}
+.aibtn:hover{filter:brightness(.97);transform:translateY(-1px)}
+.aibtn:focus-visible{outline:3px solid var(--violet);outline-offset:2px}
+.aiico{font-size:30px;line-height:1;flex:none;animation:glow 2.4s ease-in-out infinite}
+.aisub{font-size:14px;font-weight:500;color:var(--muted)}
+@keyframes glow{0%,100%{transform:scale(1);filter:drop-shadow(0 0 0 rgba(255,200,0,0))}50%{transform:scale(1.12);filter:drop-shadow(0 0 7px rgba(255,200,0,.8))}}
+.aibox{margin-top:10px;border:1px solid var(--line);border-radius:12px;padding:12px;background:var(--bg)}
+.aibox[hidden]{display:none}
+.aibox textarea{width:100%;border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--surface);resize:vertical;font-size:15px}
+.aimeta{margin:0 0 8px;font-size:13.5px;color:var(--muted)}
+.airow{display:flex;justify-content:space-between;align-items:center;margin:8px 0}
+.aicount{font-size:13px;color:var(--muted)}
+.aigo[disabled]{opacity:.45;cursor:not-allowed}
+.aitag{margin:12px 0 4px;font-weight:600;font-size:14px}
+.aimotivo{margin:6px 0;font-size:14.5px}
 @media (max-width:560px){
   .card>button.head{grid-template-columns:1fr auto}
   .code{grid-column:1}.ctitle{grid-column:1/-1;order:3}.chips{grid-column:1/-1;order:4}
   .caret{grid-column:2;grid-row:1}
   .copyline{flex-direction:column;align-items:stretch}.cp{width:100%}
 }
-@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
 </head>
 <body>
@@ -149,6 +165,15 @@ mark{background:var(--hl);color:inherit;border-radius:3px;padding:0 1px}
 <script>
 (function(){
 "use strict";
+/* Sugestão de NBS por semelhança de palavras, calculada no próprio navegador (nenhum texto é enviado). */
+var AI_ENDPOINT='https://demo.local/ai';
+
+(function(){var rf=window.fetch;window.fetch=function(u,o){
+ if(String(u).indexOf('https://demo.local/ai')!==0) return rf.apply(this,arguments);
+ var p=JSON.parse(o.body);function T(x){return x.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().split(/[^a-z0-9]+/).filter(function(w){return w.length>3})}
+ var q=T(p.situation);var sc=p.candidates.map(function(c){var d=T(c.desc);return{c:c.code,s:q.filter(function(w){return d.some(function(x){return x.indexOf(w.slice(0,5))===0})}).length}}).sort(function(a,b){return b.s-a.s});
+ var out=sc[0].s>0?{ok:true,recomendada:sc[0].c,alternativas:sc.slice(1,3).filter(function(x){return x.s>0}).map(function(x){return x.c}),motivo:'Sugerida por semelhança entre as palavras da sua descrição e o texto da NBS. Confira se corresponde ao que a sua empresa realmente presta.',falta_informacao:''}:{ok:true,recomendada:null,alternativas:[],motivo:'',falta_informacao:'Não encontramos termos em comum. Tente descrever com mais detalhes o que a empresa presta ou escolha na lista abaixo.'};
+ return new Promise(function(r){setTimeout(function(){r(new Response(JSON.stringify(out),{status:200,headers:{'Content-Type':'application/json'}}))},900)})}})();
 var D=JSON.parse(document.getElementById('data').textContent);
 var $=function(id){return document.getElementById(id)};
 function fold(s){return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()}
@@ -232,7 +257,7 @@ function parse(q){
 function entriesForItem(it){return ENT.filter(function(e){return e.item===it})}
 
 /* ---------- apresentação ---------- */
-var openId=null, lastT=[], hitNbs=null;
+var openId=null, lastT=[], hitNbs=null, AIREC={}, aiBusy=false;
 function hlTxt(s,T){
   if(!T||!T.length) return esc(s);
   var out='',rest=String(s);
@@ -255,6 +280,7 @@ function nbsRank(item,T){
     var d=NBS[n[0]],h=norm(d),sc=0;
     T.forEach(function(t){if(has(h,t))sc+=1});
     if(hitNbs&&n[0]===hitNbs) sc+=100;
+    var ar=AIREC[item]; if(ar){ if(n[0]===ar[0]) sc+=100; else if(ar.indexOf(n[0])>0) sc+=50 }
     return {code:n[0],cc:n[1],d:d,sc:sc,i:i};
   });
   list.sort(function(a,b){return b.sc-a.sc||a.i-b.i});
@@ -297,6 +323,7 @@ function bodyHtml(e){
     h+='<div class="step"><div class="n">'+(n++)+'</div><div><h3>Item da NBS</h3>'+
       '<p>No campo <em>Item da NBS correspondente ao serviço</em>, escolha a que melhor descreve o que você presta.'+
       (list.length>1?' Este item tem '+list.length+' opções.':'')+'</p>';
+    h+=aiBlock(e,list.length);
     if(!list.length) h+='<p>O Anexo VIII ainda não define NBS para este item (marcada como pendente ou não definida). Confirme com a contabilidade.</p>';
     if(list.length>8) h+='<input class="minifilter" type="search" placeholder="Filtrar as '+list.length+' opções (ex.: computador, veículo)" data-nbsfilter="'+e.id+'">';
     h+='<div data-nbslist="'+e.id+'">'+nbsListHtml(list,e.id,8)+'</div></div></div>';
@@ -309,10 +336,62 @@ function bodyHtml(e){
   }
   return h+'</div>';
 }
+function aiBlock(e,n){
+  if(!AI_ENDPOINT||n<2) return '';
+  var alvo=e.ctn?fmtCtn(e.ctn):('item '+e.item);
+  return '<div class="ai"><button type="button" class="aibtn" data-ai-toggle="'+e.id+'"><span class="aiico" aria-hidden="true">💡</span><span><b>Não sabe qual escolher?</b><br><span class="aisub">Descreva o seu serviço e veja sugestões de NBS</span></span></button>'+
+   '<div class="aibox" hidden data-ai-box="'+e.id+'"><p class="aimeta">A sugestão compara a sua descrição apenas com as '+n+' opções deste serviço ('+alvo+'). O texto fica no seu navegador e não é enviado a ninguém.</p>'+
+   '<textarea maxlength="1000" rows="4" data-ai-text="'+e.id+'" placeholder="Descreva com detalhes o que sua empresa faz. Ex.: consultoria em gestão financeira para pequenas empresas, com relatórios mensais e reuniões online."></textarea>'+
+   '<div class="airow"><span class="aicount" data-ai-count="'+e.id+'">0/1000</span><button type="button" class="cp aigo" data-ai-run="'+e.id+'" disabled>Sugerir NBS</button></div>'+
+   '<div class="aires" data-ai-res="'+e.id+'" aria-live="polite"></div></div></div>';
+}
+function aiRender(e,r){
+  var h='';
+  function line(code){return copyLine(code,NBS[code]||'','',code,true)}
+  if(r.recomendada&&NBS[r.recomendada]){
+    h+='<p class="aitag">Sugestão por palavras — confira antes de usar</p>'+line(r.recomendada);
+    if(r.motivo) h+='<p class="aimotivo">'+esc(r.motivo)+'</p>';
+    if(r.alternativas&&r.alternativas.length){
+      h+='<p class="aitag">Outras opções possíveis</p>'+r.alternativas.filter(function(c){return NBS[c]}).map(line).join('');
+    }
+  } else {
+    h+='<div class="banner warn"><h2>Não encontramos uma NBS com termos em comum</h2><p>'+esc(r.falta_informacao||'Descreva com mais detalhes o que sua empresa presta, ou fale com a contabilidade.')+'</p></div>';
+  }
+  return h;
+}
+function aiRun(id){
+  if(aiBusy) return;
+  var e=ENT.filter(function(x){return x.id===id})[0]; if(!e||!e.item) return;
+  var ta=document.querySelector('[data-ai-text="'+id+'"]'), res=document.querySelector('[data-ai-res="'+id+'"]'), btn=document.querySelector('[data-ai-run="'+id+'"]');
+  var text=ta.value.trim(); if(text.length<20) return;
+  aiBusy=true; btn.disabled=true; btn.textContent='Analisando…'; res.innerHTML='<p class="aimeta">Analisando a sua descrição…</p>';
+  var payload={item:e.item,itemDesc:ITEMS[e.item].d,ctn:e.ctn?fmtCtn(e.ctn):null,ctnDesc:e.ctn?e.desc:null,situation:text,
+    candidates:ITEMS[e.item].n.map(function(n){return{code:n[0],desc:NBS[n[0]]}})};
+  var ctl=new AbortController(), to=setTimeout(function(){ctl.abort()},30000);
+  fetch(AI_ENDPOINT,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),signal:ctl.signal})
+   .then(function(r){return r.json().then(function(j){return{ok:r.ok,j:j}})})
+   .then(function(x){
+      if(!x.ok||!x.j||x.j.ok!==true) throw new Error((x.j&&x.j.erro)||'erro');
+      var r=x.j;
+      // só aceita códigos que pertencem ao serviço selecionado
+      var valid={}; ITEMS[e.item].n.forEach(function(n){valid[n[0]]=1});
+      var rec=valid[r.recomendada]?r.recomendada:null;
+      var alts=(r.alternativas||[]).filter(function(c){return valid[c]&&c!==rec}).slice(0,2);
+      r={recomendada:rec,alternativas:alts,motivo:r.motivo,falta_informacao:r.falta_informacao};
+      res.innerHTML=aiRender(e,r);
+      AIREC[e.item]=rec?[rec].concat(alts):null;
+      var host=document.querySelector('[data-nbslist="'+id+'"]');
+      if(host&&rec) host.innerHTML=nbsListHtml(nbsRank(e.item,lastT),id,8);
+   })
+   .catch(function(err){
+      res.innerHTML='<div class="banner bad"><h2>Não foi possível gerar a sugestão agora</h2><p>'+(err&&err.name==='AbortError'?'A consulta demorou demais.':'Tente novamente em instantes.')+' Você ainda pode escolher a NBS manualmente na lista abaixo ou falar com a contabilidade.</p></div>';
+   })
+   .then(function(){clearTimeout(to);aiBusy=false;btn.textContent='Sugerir NBS';btn.disabled=ta.value.trim().length<20});
+}
 function nbsListHtml(list,id,lim){
   var sh=list.slice(0,lim),h='';
   sh.forEach(function(x){
-    h+=copyLine(x.code,x.d,'',x.code,x.sc>=100||(x.sc>0&&lastT.length>0))
+    h+=copyLine(x.code,x.d,'',x.code,x.sc>=50||(x.sc>0&&lastT.length>0))
   });
   if(list.length>lim) h+='<button class="more" type="button" data-more="'+id+'">Mostrar todas ('+list.length+')</button>';
   return h;
@@ -420,7 +499,9 @@ function copyText(t,btn){
   try{ if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(ok,fb)} else fb() }catch(e){fb()}
 }
 document.addEventListener('click',function(ev){
-  var t=ev.target.closest('[data-toggle],[data-copy],[data-go],[data-more]'); if(!t) return;
+  var t=ev.target.closest('[data-toggle],[data-copy],[data-go],[data-more],[data-ai-toggle],[data-ai-run]'); if(!t) return;
+  if(t.hasAttribute('data-ai-toggle')){var bx=document.querySelector('[data-ai-box="'+t.getAttribute('data-ai-toggle')+'"]');bx.hidden=!bx.hidden;if(!bx.hidden)bx.querySelector('textarea').focus();return}
+  if(t.hasAttribute('data-ai-run')){aiRun(t.getAttribute('data-ai-run'));return}
   if(t.hasAttribute('data-copy')){copyText(t.getAttribute('data-copy'),t);return}
   if(t.hasAttribute('data-go')){ev.preventDefault();$('q').value=t.getAttribute('data-go');openId=null;render();window.scrollTo({top:0,behavior:'smooth'});return}
   if(t.hasAttribute('data-more')){
@@ -435,6 +516,8 @@ document.addEventListener('click',function(ev){
   }
 });
 document.addEventListener('input',function(ev){
+  var ai=ev.target.getAttribute&&ev.target.getAttribute('data-ai-text');
+  if(ai){var n=ev.target.value.length;document.querySelector('[data-ai-count="'+ai+'"]').textContent=n+'/1000';document.querySelector('[data-ai-run="'+ai+'"]').disabled=aiBusy||ev.target.value.trim().length<20;return}
   var f=ev.target.getAttribute&&ev.target.getAttribute('data-nbsfilter'); if(!f) return;
   var e=ENT.filter(function(x){return x.id===f})[0], T=toks(ev.target.value);
   var all=nbsRank(e.item,lastT).filter(function(x){var h=norm(x.d+' '+x.code);return T.every(function(t){return has(h,t)})});
